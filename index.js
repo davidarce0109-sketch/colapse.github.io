@@ -26,7 +26,8 @@ let game = {
         active: false,
         candidatesIds: [],
         currentIndex: 0,
-        currentOffer: null // "build" o "steal"
+        currentOffer: null, // "build" o "steal"
+        timerDeadline: null // Timestamp de expiración sincronizado en el servidor
     },
     lastGlobalNotice: "", 
     roundDecisions: {} 
@@ -34,6 +35,7 @@ let game = {
 
 let currentRole = null;    
 let currentOrgName = "";   
+let localTimerInterval = null; // Manejador del loop visual del cronómetro
 
 // ==========================================
 // SINCRONIZACIÓN ASÍNCRONA EN TIEMPO REAL
@@ -44,12 +46,18 @@ db.ref("colapso2099").on("value", (snapshot) => {
         game = data;
         if (!game.organizations) game.organizations = [];
         if (!game.decisions) game.decisions = {};
-        if (!game.shipPhase) game.shipPhase = { active: false, candidatesIds: [], currentIndex: 0, currentOffer: null };
+        if (!game.shipPhase) game.shipPhase = { active: false, candidatesIds: [], currentIndex: 0, currentOffer: null, timerDeadline: null };
         if (!game.roundDecisions) game.roundDecisions = {};
     } else {
-        game = { round: 0, stability: 10, started: false, organizations: [], decisions: {}, shipPhase: { active: false, candidatesIds: [], currentIndex: 0, currentOffer: null }, lastGlobalNotice: "", roundDecisions: {} };
+        game = { round: 0, stability: 10, started: false, organizations: [], decisions: {}, shipPhase: { active: false, candidatesIds: [], currentIndex: 0, currentOffer: null, timerDeadline: null }, lastGlobalNotice: "", roundDecisions: {} };
     }
     
+    // Si el juego ha vuelto a 0 (por resolución final) y eres un jugador, expulsión automática inmediata
+    if (game.round === 0 && currentRole !== null && currentRole !== "admin") {
+        logout();
+        return;
+    }
+
     if (currentRole !== null) {
         render();
         evaluateShipPrompts(); 
@@ -74,6 +82,9 @@ function accessAsAdmin() {
         document.getElementById("gameScreen").style.display = "grid";
         document.getElementById("adminControls").style.display = "block";
         document.getElementById("orgPanel").style.display = "none"; 
+        
+        // El administrador sí puede conservar su botón visible para desloguearse si lo requiere
+        document.getElementById("btnExitMenu").style.display = "block"; 
         
         render(); 
     } else {
@@ -111,12 +122,16 @@ function accessAsOrg() {
     document.getElementById("orgPanel").style.display = "block";
     document.getElementById("currentOrgLabel").innerText = currentOrgName;
     
+    // Ocultar por completo e impedir el regreso manual al menú a las organizaciones
+    document.getElementById("btnExitMenu").style.display = "none"; 
+    
     render();
 }
 
 function logout() {
     currentRole = null;
     currentOrgName = "";
+    clearInterval(localTimerInterval); 
     
     document.getElementById("gameScreen").style.display = "none";
     document.getElementById("adminControls").style.display = "none";
@@ -188,21 +203,15 @@ function render() {
     document.getElementById("ranking").innerHTML = html;
 }
 
-// ==========================================
-// CONTROL DEL MANUAL DE AYUDA (ADAPTADO PARA ADMIN Y JUGADORES)
-// ==========================================
 function toggleHelp() {
-    // Buscar dinámicamente el contenedor según el rol activo para que funcione en ambas pantallas
     let content = document.getElementById("helpContent");
     let arrow = document.getElementById("helpArrow");
     
-    // Si el admin tiene su propio botón/contenedor con id alternativo en su panel corporativo
     if (!content && currentRole === "admin") {
         content = document.querySelector("#adminControls #helpContent") || document.querySelector("#adminHelpContent");
         arrow = document.querySelector("#adminControls #helpArrow") || document.querySelector("#adminHelpArrow");
     }
 
-    // Si a pesar de todo no se encuentra el contenedor específico, terminamos silenciosamente
     if (!content) return;
     
     content.innerHTML = `
@@ -221,7 +230,7 @@ function toggleHelp() {
             Al cierre de cada ronda, el astillero orbital detecta qué organizaciones han acumulado un excedente tecnológico mínimo de <strong>50 unidades de Chatarra</strong>. El sistema baraja a los candidatos elegibles en un orden aleatorio oculto y les ofrece el proyecto de forma secuencial:<br>
             • <strong>Si nadie posee la nave:</strong> El primer candidato en turno puede gastar 50 de Chatarra para <strong>CONSTRUIR</strong> la Nave de Escape y abordarla inmediatamente.<br>
             • <strong>Si un rival ya está en la nave:</strong> El candidato en turno recibe la oferta de <strong>SABOTAJE</strong>, permitiéndole gastar 50 de Chatarra para <strong>ROBAR</strong> la nave, expulsando al dueño anterior de regreso a la Tierra y tomando el control del despegue.<br>
-            <em>Nota: Si una organización acepta la oferta (ya sea construir o robar), la fase se cierra de inmediato en esa ronda. Si la rechaza, la oportunidad pasa al siguiente candidato de la lista.</em><br><br>
+            <em>Nota: Si una organización acepta la oferta (ya sea construir o robar), la fase se cierra de inmediato en esa ronda. Si la rechaza o expiran sus 10 segundos de límite, la oportunidad pasa automáticamente al siguiente candidato.</em><br><br>
 
             <h4 style="color: #ffaa00; margin-bottom: 5px;">🏆 CONDICIONES DE GANAR (COLAPSO 2099):</h4>
             <ul style="margin: 0; padding-left: 20px; list-style-type: square;">
@@ -241,9 +250,6 @@ function toggleHelp() {
     }
 }
 
-// ==========================================
-// FUNCIÓN GENERADORA DEL REPORTE UNIFICADO
-// ==========================================
 function buildFinalRoundNotice(shipResolutionText) {
     let lines = [];
     lines.push(`📋 <strong>REPORTE ACCIONES RONDA ${game.round}:</strong>`);
@@ -266,11 +272,12 @@ function buildFinalRoundNotice(shipResolutionText) {
 }
 
 // ==========================================
-// MECÁNICA SINCRÓNICA DE LA NAVE DE ESCAPE
+// MECÁNICA SINCRÓNICA DE LA NAVE DE ESCAPE + TIMEOUT
 // ==========================================
 
 function evaluateShipPrompts() {
     let shipTerminal = document.getElementById("shipTerminal");
+    clearInterval(localTimerInterval); 
     
     if (!game.shipPhase || !game.shipPhase.active) {
         shipTerminal.style.display = "none";
@@ -279,21 +286,47 @@ function evaluateShipPrompts() {
 
     let activeCandidateId = game.shipPhase.candidatesIds[game.shipPhase.currentIndex];
     
+    // Comparación en base al timestamp absoluto del servidor
+    let now = Date.now();
+    let timeLeft = Math.ceil((game.shipPhase.timerDeadline - now) / 1000);
+
+    // Si expiró el tiempo, el propio cliente afectado (o el admin para forzar seguridad) procesa la declinación
+    if (timeLeft <= 0) {
+        if (currentRole === activeCandidateId || currentRole === "admin") {
+            declineShipProject();
+        }
+        return;
+    }
+
     if (currentRole !== "admin" && currentRole === activeCandidateId) {
         shipTerminal.style.display = "block";
         let msg = document.getElementById("shipTerminalMessage");
         let btn = document.getElementById("btnShipAccept");
 
+        let baseHTML = "";
         if (game.shipPhase.currentOffer === "steal") {
             let owner = game.organizations.find(o => o.escape);
-            msg.innerHTML = `⚠️ <strong style="color: #ff5555;">¡PROYECTO SABOTAJE DISPONIBLE!</strong> La única Nave de Escape construida pertenece a <strong>${owner ? owner.name : 'un rival'}</strong>.<br>¿Deseas gastar 50 unidades de Chatarra para <strong>ROBARLES</strong> la nave y asegurar tu escape?`;
+            baseHTML = `⚠️ <strong style="color: #ff5555;">¡PROYECTO SABOTAJE DISPONIBLE!</strong> La única Nave de Escape construida pertenece a <strong>${owner ? owner.name : 'un rival'}</strong>.<br>¿Deseas gastar 50 unidades de Chatarra para <strong>ROBARLES</strong> la nave y asegurar tu escape?`;
             btn.innerText = "🏴‍☠️ ¡ROBAR NAVE (-50 Chatarra)!";
             btn.style.background = "#ff5555";
         } else {
-            msg.innerHTML = `🛠️ <strong style="color: #00ff99;">PROYECTO ASTILLERO DISPONIBLE:</strong> Cuentas con materiales de alta gama.<br>¿Deseas gastar 50 unidades de Chatarra para construir la única Nave de Escape planetaria y abordarla?`;
+            baseHTML = `🛠️ <strong style="color: #00ff99;">PROYECTO ASTILLERO DISPONIBLE:</strong> Cuentas con materiales de alta gama.<br>¿Deseas gastar 50 unidades de Chatarra para construir la única Nave de Escape planetaria y abordarla?`;
             btn.innerText = "🛠️ ¡CONSTRUIR NAVE (-50 Chatarra)!";
             btn.style.background = "#00ff99";
         }
+
+        // Loop de renderizado del contador en reversa por segundo
+        localTimerInterval = setInterval(() => {
+            let rem = Math.ceil((game.shipPhase.timerDeadline - Date.now()) / 1000);
+            if (rem <= 0) {
+                clearInterval(localTimerInterval);
+                declineShipProject();
+            } else {
+                document.getElementById("shipTimerLabel").innerHTML = `⏳ Tiempo restante para decidir: <strong style="color:#ffcc00; font-size:1.3rem;">${rem}s</strong>`;
+            }
+        }, 1000);
+
+        msg.innerHTML = `${baseHTML}<br><br><div id="shipTimerLabel">⏳ Tiempo restante para decidir: <strong style="color:#ffcc00; font-size:1.3rem;">${timeLeft}s</strong></div>`;
     } else {
         shipTerminal.style.display = "none";
     }
@@ -303,6 +336,7 @@ function acceptShipProject() {
     let org = game.organizations[currentRole];
     if (org.scrap < 50) return alert("Error: Estructuras de chatarra insuficientes.");
 
+    clearInterval(localTimerInterval);
     let currentOwner = game.organizations.find(o => o.escape);
     let shipNotice = "";
 
@@ -319,18 +353,19 @@ function acceptShipProject() {
     org.shipAction = game.shipPhase.currentOffer === "steal" ? "🏴‍☠️ ROBÓ LA NAVE" : "🛠️ CONSTRUYÓ NAVE";
 
     game.lastGlobalNotice = buildFinalRoundNotice(shipNotice);
-    game.shipPhase = { active: false, candidatesIds: [], currentIndex: 0, currentOffer: null };
+    game.shipPhase = { active: false, candidatesIds: [], currentIndex: 0, currentOffer: null, timerDeadline: null };
     
     checkPostShipTurnResolutions();
 }
 
 function declineShipProject() {
+    clearInterval(localTimerInterval);
     game.shipPhase.currentIndex++;
     
     if (game.shipPhase.currentIndex >= game.shipPhase.candidatesIds.length) {
         game.shipPhase.active = false;
         
-        let shipNotice = "Los candidatos elegibles decidieron rechazar la oferta o resguardar su chatarra.";
+        let shipNotice = "Los candidatos elegibles decidieron rechazar la oferta o se les agotó el tiempo límite.";
         game.lastGlobalNotice = buildFinalRoundNotice(shipNotice);
         
         checkPostShipTurnResolutions();
@@ -338,6 +373,9 @@ function declineShipProject() {
         let nextId = game.shipPhase.candidatesIds[game.shipPhase.currentIndex];
         let currentOwner = game.organizations.find(o => o.escape);
         game.shipPhase.currentOffer = currentOwner ? "steal" : "build";
+        
+        // Se refrescan de forma limpia los 10 segundos para el siguiente candidato de la cola
+        game.shipPhase.timerDeadline = Date.now() + 10000; 
         saveToServer(); 
     }
 }
@@ -361,7 +399,7 @@ function startGame() {
         o.scrap = 10;
         o.reputation = 0;
     });
-    game.shipPhase = { active: false, candidatesIds: [], currentIndex: 0, currentOffer: null };
+    game.shipPhase = { active: false, candidatesIds: [], currentIndex: 0, currentOffer: null, timerDeadline: null };
     saveToServer();
 }
 
@@ -435,7 +473,8 @@ function nextRound() {
             active: true,
             candidatesIds: candidatesIds,
             currentIndex: 0,
-            currentOffer: currentOwner ? "steal" : "build"
+            currentOffer: currentOwner ? "steal" : "build",
+            timerDeadline: Date.now() + 10000 // Inicia los 10 segundos base para el primer candidato
         };
         saveToServer();
     } else {
@@ -455,8 +494,11 @@ function checkPostShipTurnResolutions() {
             extraMsg = `<br><br>💥 <strong>COLAPSO CRÍTICO:</strong> El planeta fue destruido y la nave quedó desierta. Extinción total de las compañías.`;
         }
         game.lastGlobalNotice += extraMsg;
-        saveToServer(); 
-        setTimeout(() => manualReset(true), 15000);
+        
+        // Forzar ronda a 0 en la DB para accionar de inmediato el vaciado de los clientes jugadores
+        game.round = 0;
+        game.started = false;
+        saveToServer();
         return;
     }
 
@@ -481,8 +523,11 @@ function checkPostShipTurnResolutions() {
             extraMsg = `<br><br>🏆 <strong>FIN DE LA SIMULACIÓN:</strong> El planeta sobrevive gravemente dañado. Victoria Moral por Reputación para: <strong>${winner.name}</strong> (Rep: ${winner.reputation}).`;
         }
         game.lastGlobalNotice += extraMsg;
-        saveToServer(); 
-        setTimeout(() => manualReset(true), 15000);
+        
+        // Cierre definitivo de sesión para todos al mutar a la ronda cero
+        game.round = 0;
+        game.started = false;
+        saveToServer();
         return;
     }
 
@@ -499,17 +544,13 @@ function manualReset(silent = false) {
             started: false, 
             organizations: [], 
             decisions: {},
-            shipPhase: { active: false, candidatesIds: [], currentIndex: 0, currentOffer: null },
+            shipPhase: { active: false, candidatesIds: [], currentIndex: 0, currentOffer: null, timerDeadline: null },
             lastGlobalNotice: "🔄 Los servidores de simulación han sido reiniciados.",
             roundDecisions: {}
         };
         
         db.ref("colapso2099").set(game).then(() => {
-            if (silent) {
-                logout();
-            } else {
-                render();
-            }
+            logout();
         });
     }
 }
