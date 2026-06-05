@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Colapso 2099 - Edición Realtime</title>
+    <link rel="stylesheet" href="index.css">
+    
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+</head>
+<body>
+
+<h1>🌍 COLAPSO 2099</h1>
+
+<div id="authScreen" class="auth-container">
+    <h2>Selecciona tu Rol de Ingreso</h2>
+    <div class="auth-buttons">
+        <button onclick="accessAsAdmin()" style="background: #00ecff; color: #111; font-weight: bold;">👁️ Entrar como Administrador</button>
+        <button onclick="accessAsOrg()" style="background: #00aa66; color: white; font-weight: bold;">🚀 Entrar como Organización</button>
+    </div>
+</div>
+
+<div id="gameScreen" class="container" style="display: none;">
+    
+    <div id="globalAlerts" class="panel" style="grid-column: span 2; display: none; background: #221133; border: 2px solid #aa00ff; text-align: center; padding: 15px; margin-bottom: 10px;">
+        <h3 id="alertMessage" style="color: #ff00ff; margin: 0; font-size: 1.2rem;">---</h3>
+    </div>
+
+    <div id="shipTerminal" class="panel" style="grid-column: span 2; display: none; background: #112233; border: 2px solid #00ecff; text-align: center; padding: 20px; margin-bottom: 15px;">
+        <h2 style="color: #00ecff; margin-top: 0;">🚨 PROYECTO EVACUACIÓN 🚨</h2>
+        <p id="shipTerminalMessage" style="font-size: 1.1rem; color: #fff;">Tienes suficiente chatarra para iniciar el proyecto.</p>
+        <div style="display: flex; gap: 20px; justify-content: center; margin-top: 15px;">
+            <button id="btnShipAccept" onclick="acceptShipProject()" style="background: #00ff99; color: #111; font-weight: bold; padding: 12px 24px; border: none; cursor: pointer; border-radius: 4px;">¡Aceptar Proyecto (-50 Chatarra)!</button>
+            <button onclick="declineShipProject()" style="background: #444; color: #ccc; padding: 12px 24px; border: none; cursor: pointer; border-radius: 4px;">Rechazar y Esperar</button>
+        </div>
+    </div>
+    
+    <div class="panel" id="adminPanel">
+        <h2>Panel de Control</h2>
+        <div style="margin-top:20px; display: flex; justify-content: space-between; align-items: center;">
+            <h3>Ronda: <span id="round" style="color:#00ecff;">0</span> / 5</h3>
+            <h3>Estabilidad: <span id="stability">10</span>/10</h3>
+        </div>
+
+        <div id="ranking"></div>
+
+        <div id="adminControls" style="display: none;">
+            <button class="btn-process" onclick="nextRound()" style="width:100%; font-weight:bold; height:50px; font-size:1.1rem;">Procesar Ronda Actual</button>
+            <button onclick="startGame()" style="width:100%; background:#333; color:#aaa; margin-top:10px; padding:10px;">Iniciar Partida</button>
+            <button class="btn-danger" onclick="manualReset()" style="width:100%; margin-top:10px; padding:10px;">Reiniciar Todo (Borrar de Firebase)</button>
+        </div>
+        <button onclick="logout()" style="width:100%; background:#444; color:white; margin-top:15px; padding:10px; border:none; cursor:pointer;">⬅️ Salir al Menú</button>
+    </div>
+
+    <div class="panel" id="orgPanel" style="display: none;">
+        <h2>Terminal de Decisiones</h2>
+        <p>Organización activa: <strong id="currentOrgLabel" style="color: #00ff99;">---</strong></p>
+
+        <div id="orgActions" style="display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 10px;">
+            <button class="btn-cooperate" onclick="sendDecision('cooperate')">🟢 COOPERAR (+$ Pozo, +5 Chatarra, +5 Reputación)</button>
+            <button class="btn-betray" onclick="sendDecision('betray')">🔴 TRAICIONAR (-2 Estabilidad, +20 Riqueza, +20 Chatarra)</button>
+            <button class="btn-repair" onclick="sendDecision('repair')">🔧 REPARAR (+1 Estabilidad, -5 Chatarra, +7 Reputación)</button>
+        </div>
+
+        <p id="status" class="status-msg" style="color: #e6a23c; margin-top: 15px; font-weight: bold;"></p>
+    </div>
+
+    <div class="panel" id="helpPanel" style="grid-column: span 2; margin-top: 20px; background: #151515; border-top: 3px solid #333; padding: 15px;">
+        <h3 style="cursor: pointer; color: #e6a23c; margin: 0; display: flex; justify-content: space-between;" onclick="toggleHelp()">
+            <span>📖 Manual de Supervivencia y Guía de Juego</span>
+            <span id="helpArrow">▼ Expandir</span>
+        </h3>
+        <div id="helpContent" style="display: none; margin-top: 15px; font-size: 0.9rem; line-height: 1.6; color: #ccc; border-top: 1px solid #222; padding-top: 15px;">
+            <p><strong>Contexto:</strong> Año 2099. La Tierra colapsa. El juego dura un máximo de <strong>5 rondas</strong>. Tu corporación gana acumulando recursos o escapando del planeta antes de que su estabilidad sea 0.</p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div>
+                    <h4 style="color: #00ff99; margin-bottom: 5px;">🟢 Acciones y Consecuencias:</h4>
+                    <ul style="padding-left: 20px; margin: 0;">
+                        <li><strong>Cooperar:</strong> Aporta $15 al Pozo Común (se divide de forma equitativa entre todos al terminar la ronda). Recibes +5 de chatarra y +5 de reputación.</li>
+                        <li><strong>Traicionar:</strong> Tomas recursos de forma egoísta. Recibes +20 de riqueza, +20 de chatarra y -7 de reputación. <span style="color:#ff5555;">Resta -2 a la Estabilidad del planeta.</span></li>
+                        <li><strong>Reparar:</strong> Consume 5 de chatarra. Si no posees chatarra sufres una multa automática de -$10. Recibes +7 de reputación y <span style="color:#00ff99;">añades +1 a la Estabilidad global.</span></li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 style="color: #00ecff; margin-bottom: 5px;">🚀 Reglas de la Nave de Escape:</h4>
+                    <ul style="padding-left: 20px; margin: 0;">
+                        <li>Si cierras la ronda con <strong>50 unidades de Chatarra</strong> o más, eres candidato para la nave.</li>
+                        <li>El servidor analiza a los candidatos en un orden aleatorio balanceado en tiempo real.</li>
+                        <li>Cuando sea tu turno, aparecerá un panel arriba. Si la nave está vacía, podrás <strong>construirla</strong>. Si ya tiene dueño, podrás gastar tus 50 de chatarra para <strong>robársela</strong>.</li>
+                        <li>Si la estabilidad llega a 0, <strong>solo quien esté arriba de la nave se salva y gana</strong>. Si está vacía, todos mueren.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script src="index.js"></script>
+</body>
+</html>
