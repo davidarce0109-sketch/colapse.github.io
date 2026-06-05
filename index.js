@@ -286,12 +286,13 @@ function evaluateShipPrompts() {
 
     let activeCandidateId = game.shipPhase.candidatesIds[game.shipPhase.currentIndex];
     
-    // Comparación en base al timestamp absoluto del servidor
+    // CORRECCIÓN: Forzar parsing numérico estricto para evitar el bug de "NaNs"
+    let deadline = parseInt(game.shipPhase.timerDeadline, 10);
     let now = Date.now();
-    let timeLeft = Math.ceil((game.shipPhase.timerDeadline - now) / 1000);
+    let timeLeft = Math.ceil((deadline - now) / 1000);
 
-    // Si expiró el tiempo, el propio cliente afectado (o el admin para forzar seguridad) procesa la declinación
-    if (timeLeft <= 0) {
+    // Si expiró el tiempo o el cálculo no es válido, procesamos la declinación automáticamente
+    if (isNaN(timeLeft) || timeLeft <= 0) {
         if (currentRole === activeCandidateId || currentRole === "admin") {
             declineShipProject();
         }
@@ -315,10 +316,10 @@ function evaluateShipPrompts() {
             btn.style.background = "#00ff99";
         }
 
-        // Loop de renderizado del contador en reversa por segundo
+        // Loop local para el renderizado visual continuo del cronómetro
         localTimerInterval = setInterval(() => {
-            let rem = Math.ceil((game.shipPhase.timerDeadline - Date.now()) / 1000);
-            if (rem <= 0) {
+            let rem = Math.ceil((parseInt(game.shipPhase.timerDeadline, 10) - Date.now()) / 1000);
+            if (isNaN(rem) || rem <= 0) {
                 clearInterval(localTimerInterval);
                 declineShipProject();
             } else {
@@ -362,6 +363,7 @@ function declineShipProject() {
     clearInterval(localTimerInterval);
     game.shipPhase.currentIndex++;
     
+    // Si ya pasamos por todos los candidatos del array
     if (game.shipPhase.currentIndex >= game.shipPhase.candidatesIds.length) {
         game.shipPhase.active = false;
         
@@ -371,10 +373,16 @@ function declineShipProject() {
         checkPostShipTurnResolutions();
     } else {
         let nextId = game.shipPhase.candidatesIds[game.shipPhase.currentIndex];
+        
+        // CORRECCIÓN: Filtro de auto-robo. Si el siguiente candidato resulta ser el dueño, saltamos su turno de forma recursiva
+        if (game.organizations[nextId].escape) {
+            declineShipProject();
+            return;
+        }
+
         let currentOwner = game.organizations.find(o => o.escape);
         game.shipPhase.currentOffer = currentOwner ? "steal" : "build";
         
-        // Se refrescan de forma limpia los 10 segundos para el siguiente candidato de la cola
         game.shipPhase.timerDeadline = Date.now() + 10000; 
         saveToServer(); 
     }
@@ -474,11 +482,21 @@ function nextRound() {
             candidatesIds: candidatesIds,
             currentIndex: 0,
             currentOffer: currentOwner ? "steal" : "build",
-            timerDeadline: Date.now() + 10000 // Inicia los 10 segundos base para el primer candidato
+            timerDeadline: Date.now() + 10000
         };
+
+        // CORRECCIÓN: Si por azares de la baraja el primer candidato de la lista ya es el dueño, forzamos el salto preventivo inmediato
+        let firstCandidateId = candidatesIds[0];
+        if (game.organizations[firstCandidateId].escape) {
+            game.shipPhase.currentIndex = 0; 
+            saveToServer();
+            declineShipProject(); 
+            return;
+        }
+
         saveToServer();
     } else {
-        let shipNotice = "Ningún equipo cuenta con la chatarra requerida (50) para activar el astillero orbital.";
+        let shipNotice = "Ningun equipo cuenta con la chatarra requerida (50) para activar el astillero orbital.";
         game.lastGlobalNotice = buildFinalRoundNotice(shipNotice);
         checkPostShipTurnResolutions();
     }
