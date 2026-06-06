@@ -3,7 +3,7 @@ body {
     background-size: cover; 
     background-position: center; 
     background-repeat: no-repeat; 
-    height: 920px; 
+    height: 100vh; 
     font-family: 'Segoe UI', Arial, sans-serif; 
     color: #eee; 
     margin: 0; 
