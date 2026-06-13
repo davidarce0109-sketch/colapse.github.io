@@ -11,30 +11,21 @@ const firebaseConfig = {
   appId: "1:742926104267:web:f3f5388819d82608310d4e"
 };
 
-// Inicializar Firebase de manera segura
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-// Objeto de estado interno sincronizado
 let game = {
     round: 0,
     stability: 10,
     started: false,
-    ended: false, // <- NUEVO: Controla si el juego ha terminado pero sigue en exposición
+    ended: false, 
     organizations: [], 
     decisions: {},
-    shipPhase: {
-        active: false,
-        candidatesIds: [],
-        currentIndex: 0,
-        currentOffer: null, 
-        timerDeadline: null 
-    },
+    shipPhase: { active: false, candidatesIds: [], currentIndex: 0, currentOffer: null, timerDeadline: null },
     lastGlobalNotice: "", 
     roundDecisions: {} 
 };
 
-// PERSISTENCIA: Intentar recuperar la sesión activa del navegador
 let currentRole = localStorage.getItem("colapso_role") !== null ? 
     (localStorage.getItem("colapso_role") === "admin" ? "admin" : parseInt(localStorage.getItem("colapso_role"), 10)) 
     : null;   
@@ -58,7 +49,6 @@ db.ref("colapso2099").on("value", (snapshot) => {
         game = { round: 0, stability: 10, started: false, ended: false, organizations: [], decisions: {}, shipPhase: { active: false, candidatesIds: [], currentIndex: 0, currentOffer: null, timerDeadline: null }, lastGlobalNotice: "", roundDecisions: {} };
     }
     
-    // CORRECCIÓN: Si el admin reinició todo (ended vuelve a false y round es 0), se expulsa a los jugadores al menú
     if (game.round === 0 && !game.ended && currentRole !== null && currentRole !== "admin") {
         logout();
         return;
@@ -75,9 +65,8 @@ function saveToServer() {
 }
 
 // ==========================================
-// ENRUTAMIENTO DE ACCESO Y RESETS
+// ENRUTAMIENTO DE ACCESO Y SESIÓN
 // ==========================================
-
 function accessAsAdmin() {
     let password = prompt("Introduce la contraseña de Administrador:");
     if (password === "kaleidblood") {
@@ -88,7 +77,9 @@ function accessAsAdmin() {
         localStorage.setItem("colapso_orgName", "");
 
         document.getElementById("authScreen").style.display = "none";
-        document.getElementById("gameScreen").style.display = "flex";        document.getElementById("adminControls").style.display = "block";
+        document.getElementById("gameScreen").style.display = "flex"; // Forzado Flex adaptive
+        document.getElementById("adminPanel").style.display = "block";
+        document.getElementById("adminControls").style.display = "flex";
         document.getElementById("orgPanel").style.display = "none"; 
         document.getElementById("btnExitMenu").style.display = "block"; 
         
@@ -106,8 +97,7 @@ function accessAsOrg() {
     let idx = game.organizations.findIndex(org => org.name.toLowerCase() === name.toLowerCase());
 
     if (idx === -1) {
-        // Si el juego ya empezó o terminó, impedir registros nuevos improvisados
-        if(game.started || game.ended) return alert("❌ No puedes unirte, la simulación ya está en curso o ha finalizado.");
+        if(game.started || game.ended) return alert("❌ No puedes unirte, la simulación ya está en curso.");
 
         game.organizations.push({
             name: name,
@@ -129,7 +119,8 @@ function accessAsOrg() {
     localStorage.setItem("colapso_orgName", currentOrgName);
 
     document.getElementById("authScreen").style.display = "none";
-    document.getElementById("gameScreen").style.display = "flex";
+    document.getElementById("gameScreen").style.display = "flex"; // Forzado Flex adaptive
+    document.getElementById("adminPanel").style.display = "none";
     document.getElementById("adminControls").style.display = "none"; 
     document.getElementById("orgPanel").style.display = "block";
     document.getElementById("currentOrgLabel").innerText = currentOrgName;
@@ -147,6 +138,7 @@ function logout() {
     localStorage.removeItem("colapso_orgName");
     
     document.getElementById("gameScreen").style.display = "none";
+    document.getElementById("adminPanel").style.display = "none";
     document.getElementById("adminControls").style.display = "none";
     document.getElementById("orgPanel").style.display = "none";
     document.getElementById("status").innerText = "";
@@ -157,9 +149,8 @@ function logout() {
 }
 
 // ==========================================
-// RENDERIZADO GRÁFICO DINÁMICO
+// RENDERIZADO VISUAL
 // ==========================================
-
 function render() {
     document.getElementById("round").innerText = game.round;
     let stabEl = document.getElementById("stability");
@@ -174,8 +165,7 @@ function render() {
         alertBox.style.display = "none";
     }
 
-    // Clasificación final o parcial (Se ordena por riqueza de forma base)
-    let ranking = game.organizations.slice().sort((a, b) => b.wealth - a.wealth);
+    let ranking = game.organizations.slice().sort((a, b) => (b.wealth || 0) - (a.wealth || 0));
 
     let html = `<table><tr>
                     <th>Organización</th>
@@ -200,9 +190,11 @@ function render() {
             if (rawDecision === "repair") decisionTraducida = "🔧 Reparar";
         }
 
+        let riquezaSegura = (Number(org.wealth) || 0).toFixed(1);
+
         html += `<tr ${org.escape ? 'style="background: rgba(170, 0, 255, 0.15);"' : ''}>
             <td>${org.name}</td>
-            <td>$${org.wealth.toFixed(1)}</td>
+            <td>$${riquezaSegura}</td>
             <td>${org.reputation || 0}</td>
             <td>${org.scrap}</td>
             <td>${org.escape ? '<span style="background:#aa00ff; color:#fff; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:0.8rem;">🚀 EN NAVE</span>' : '🌍 TIERRA'}</td>`;
@@ -216,50 +208,16 @@ function render() {
     html += "</table>";
     document.getElementById("ranking").innerHTML = html;
 
-    // Si el juego terminó, ocultamos los botones de acción a las organizaciones para que solo contemplen la tabla
     if(game.ended && currentRole !== "admin" && currentRole !== null) {
-        document.getElementById("status").innerHTML = `<strong style="color: #00ffff; font-size: 1.1rem;">📊 Simulación Finalizada. Esperando que el Administrador reinicie los servidores...</strong>`;
+        document.getElementById("status").innerHTML = `<strong style="color: #00ffff; font-size: 1.1rem;">📊 Simulación Finalizada. Esperando reinicio de servidores...</strong>`;
     }
 }
 
 function toggleHelp() {
     let content = document.getElementById("helpContent");
     let arrow = document.getElementById("helpArrow");
-    
-    if (!content && currentRole === "admin") {
-        content = document.querySelector("#adminControls #helpContent") || document.querySelector("#adminHelpContent");
-        arrow = document.querySelector("#adminControls #helpArrow") || document.querySelector("#adminHelpArrow");
-    }
-
     if (!content) return;
     
-    content.innerHTML = `
-        <div style="padding: 10px; font-size: 0.9rem; line-height: 1.4rem; text-align: left;">
-            <p style="font-style: italic; color: #bbbbbb; margin-top: 0;">
-                🌍 <strong>Colapso 2099</strong> es un simulador de teoría de juegos y dilema social. Las corporaciones compiten por extraer capital y chatarra tecnológica de un planeta al borde del abismo ecológico. Cada decisión afecta la estabilidad del sistema global: la codicia individual acelera la destrucción, mientras que el mantenimiento colectivo mantiene el orden. El fin justifica los medios... si logras sobrevivir.
-            </p>
-            <hr style="border: 0; border-top: 1px solid #444; margin: 10px 0;">
-
-            <h4 style="color: #00ff99; margin-top: 0; margin-bottom: 5px;">🛠️ MATRIZ DE DECISIONES Y ACCIONES:</h4>
-            <strong>🟢 Cooperar:</strong> Aporta al pozo común. Todos los participantes reciben un dividendo equitativo basado en la cooperación colectiva de la ronda. Además, tu organización recolecta de forma segura <strong>+5 unidades de Chatarra</strong> y ganas <strong>+5 de Reputación</strong>.<br>
-            <strong>🔴 Traicionar:</strong> Extraes recursos de forma egoísta e invasiva. Tu corporación gana directamente un bono neto de <strong>+$20 de Riqueza</strong> y extrae <strong>+20 unidades de Chatarra</strong>. Sin embargo, penaliza tu estatus internacional con <strong>-7 de Reputación</strong> y degrada gravemente el ecosistema, restando <strong>-2 puntos de Estabilidad Global</strong> al planeta.<br>
-            <strong>🔧 Reparar:</strong> Inviertes recursos en estabilizar el núcleo. Reparar cuesta <strong>5 unidades de Chatarra</strong> (si no tienes chatarra suficiente, se descuentan automáticamente <strong>-$10 de Riqueza</strong> para financiar los materiales). Esta acción desinteresada otorga <strong>+7 de Reputación</strong> y cura el planeta sumando <strong>+1 punto de Estabilidad Global</strong>.<br><br>
-            
-            <h4 style="color: #00ffff; margin-bottom: 5px;">🚀 FASE DE INGENIERÍA Y EVACUACIÓN (LA NAVE):</h4>
-            Al cierre de cada ronda, el astillero orbital detecta qué organizaciones han acumulado un excedente tecnológico mínimo de <strong>50 unidades de Chatarra</strong>. El sistema baraja a los candidatos elegibles en un orden aleatorio oculto y les ofrece el proyecto de forma secuencial:<br>
-            • <strong>Si nadie posee la nave:</strong> El primer candidato en turno puede gastar 50 de Chatarra para <strong>CONSTRUIR</strong> la Nave de Escape y abordarla inmediatamente.<br>
-            • <strong>Si un rival ya está en la nave:</strong> El candidato en turno recibe la oferta de <strong>SABOTAJE</strong>, permitiéndole gastar 50 de Chatarra para <strong>ROBAR</strong> la nave, expulsando al dueño anterior de regreso a la Tierra y tomando el control del despegue.<br>
-            <em>Nota: Si una organización acepta la oferta (ya sea construir o robar), la fase se cierra de inmediato en esa ronda. Si la rechaza o expiran sus 10 segundos de límite, la oportunidad pasa automáticamente al siguiente candidato.</em><br><br>
-
-            <h4 style="color: #ffaa00; margin-bottom: 5px;">🏆 CONDICIONES DE GANAR (COLAPSO 2099):</h4>
-            <ul style="margin: 0; padding-left: 20px; list-style-type: square;">
-                <li><strong>💥 Victoria por Evacuación Orbital (Estabilidad 0):</strong> Si la estabilidad planetaria llega a 0 en cualquier momento, el planeta colapsa de forma catastrófica. La <strong>única organización</strong> que esté a bordo de la Nave de Escape en ese instante gana automáticamente la partida por supervivencia en el espacio profundo.</li>
-                <li><strong>💰 Victoria Capitalista (Ronda 5 concluida con Estabilidad ≥ 7):</strong> Si al terminar la quinta ronda el planeta se mantiene estable y saludable, las fronteras se aseguran y gana la corporación con la <strong>mayor cantidad de Riqueza acumulada</strong>.</li>
-                <li><strong>🤝 Victoria Ética por Reputación (Ronda 5 concluida con Estabilidad < 7):</strong> Si al terminar la quinta ronda el planeta se salvó pero quedó debilitado y en crisis profunda, los sobrevivientes eligen un líder moral: gana la organización que posea la <strong>mayor cantidad de Reputación</strong>.</li>
-            </ul>
-        </div>
-    `;
-
     if (content.style.display === "none" || content.style.display === "") {
         content.style.display = "block";
         if (arrow) arrow.innerText = "▲ Colapsar";
@@ -276,24 +234,20 @@ function buildFinalRoundNotice(shipResolutionText) {
     game.organizations.forEach((org, id) => {
         let decision = game.roundDecisions ? game.roundDecisions[id] : null;
         let actionText = "💤 No reportó acción";
-        
         if (decision === "cooperate") actionText = "🟢 Cooperó con el planeta";
         else if (decision === "betray") actionText = "🔴 Traicionó para extraer recursos";
         else if (decision === "repair") actionText = "🔧 Reparó la infraestructura global";
-        
-        lines.push(`• <strong>${org.name}</strong> tomó la opción: ${actionText}.`);
+        lines.push(`• <strong>${org.name}</strong>: ${actionText}.`);
     });
     
-    lines.push(`📉 <strong>Estabilidad resultante del planeta:</strong> ${game.stability}/10.`);
+    lines.push(`📉 <strong>Estabilidad Ecosistema:</strong> ${game.stability}/10.`);
     lines.push(`<br>🚀 <strong>PROYECTO EVACUACIÓN:</strong> ${shipResolutionText}`);
-    
     return lines.join("<br>");
 }
 
 // ==========================================
-// MECÁNICA SINCRÓNICA DE LA NAVE DE ESCAPE + TIMEOUT
+// SISTEMA AUTOMÁTICO DE EVACUACIÓN
 // ==========================================
-
 function evaluateShipPrompts() {
     let shipTerminal = document.getElementById("shipTerminal");
     clearInterval(localTimerInterval); 
@@ -304,7 +258,6 @@ function evaluateShipPrompts() {
     }
 
     let activeCandidateId = game.shipPhase.candidatesIds[game.shipPhase.currentIndex];
-    
     let deadline = parseInt(game.shipPhase.timerDeadline, 10);
     let now = Date.now();
     let timeLeft = Math.ceil((deadline - now) / 1000);
@@ -320,15 +273,15 @@ function evaluateShipPrompts() {
         shipTerminal.style.display = "block";
         let msg = document.getElementById("shipTerminalMessage");
         let btn = document.getElementById("btnShipAccept");
-
         let baseHTML = "";
+
         if (game.shipPhase.currentOffer === "steal") {
             let owner = game.organizations.find(o => o.escape);
-            baseHTML = `⚠️ <strong style="color: #ff5555;">¡PROYECTO SABOTAJE DISPONIBLE!</strong> La única Nave de Escape construida pertenece a <strong>${owner ? owner.name : 'un rival'}</strong>.<br>¿Deseas gastar 50 unidades de Chatarra para <strong>ROBARLES</strong> la nave y asegurar tu escape?`;
+            baseHTML = `⚠️ <strong style="color: #ff5555;">¡SABOTAJE DISPONIBLE!</strong> La única Nave pertenece a <strong>${owner ? owner.name : 'un rival'}</strong>.<br>¿Gastar 50 de Chatarra para <strong>ROBARLES</strong> el vehículo y asegurar tu escape?`;
             btn.innerText = "🏴‍☠️ ¡ROBAR NAVE (-50 Chatarra)!";
             btn.style.background = "#ff5555";
         } else {
-            baseHTML = `🛠️ <strong style="color: #00ff99;">PROYECTO ASTILLERO DISPONIBLE:</strong> Cuentas con materiales de alta gama.<br>¿Deseas gastar 50 unidades de Chatarra para construir la única Nave de Escape planetaria y abordarla?`;
+            baseHTML = `🛠️ <strong style="color: #00ff99;">ASTILLERO DISPONIBLE:</strong> Tienes materiales suficientes.<br>¿Gastar 50 de Chatarra para construir la Nave de Escape y abordarla?`;
             btn.innerText = "🛠️ ¡CONSTRUIR NAVE (-50 Chatarra)!";
             btn.style.background = "#00ff99";
         }
@@ -339,11 +292,11 @@ function evaluateShipPrompts() {
                 clearInterval(localTimerInterval);
                 declineShipProject();
             } else {
-                document.getElementById("shipTimerLabel").innerHTML = `⏳ Tiempo restante para decidir: <strong style="color:#ffcc00; font-size:1.3rem;">${rem}s</strong>`;
+                document.getElementById("shipTimerLabel").innerHTML = `⏳ Tiempo de respuesta: <strong style="color:#ffcc00; font-size:1.3rem;">${rem}s</strong>`;
             }
         }, 1000);
 
-        msg.innerHTML = `${baseHTML}<br><br><div id="shipTimerLabel">⏳ Tiempo restante para decidir: <strong style="color:#ffcc00; font-size:1.3rem;">${timeLeft}s</strong></div>`;
+        msg.innerHTML = `${baseHTML}<br><br><div id="shipTimerLabel">⏳ Tiempo de respuesta: <strong style="color:#ffcc00; font-size:1.3rem;">${timeLeft}s</strong></div>`;
     } else {
         shipTerminal.style.display = "none";
     }
@@ -351,7 +304,7 @@ function evaluateShipPrompts() {
 
 function acceptShipProject() {
     let org = game.organizations[currentRole];
-    if (org.scrap < 50) return alert("Error: Estructuras de chatarra insuficientes.");
+    if (org.scrap < 50) return alert("Estructuras de chatarra insuficientes.");
 
     clearInterval(localTimerInterval);
     let currentOwner = game.organizations.find(o => o.escape);
@@ -371,7 +324,6 @@ function acceptShipProject() {
 
     game.lastGlobalNotice = buildFinalRoundNotice(shipNotice);
     game.shipPhase = { active: false, candidatesIds: [], currentIndex: 0, currentOffer: null, timerDeadline: null };
-    
     checkPostShipTurnResolutions();
 }
 
@@ -381,10 +333,8 @@ function declineShipProject() {
     
     if (game.shipPhase.currentIndex >= game.shipPhase.candidatesIds.length) {
         game.shipPhase.active = false;
-        
-        let shipNotice = "Los candidatos elegibles en la Tierra decidieron rechazar la oferta o se les agotó el tiempo límite.";
+        let shipNotice = "Los candidatos elegibles rechazaron la oferta o se agotó su tiempo.";
         game.lastGlobalNotice = buildFinalRoundNotice(shipNotice);
-        
         checkPostShipTurnResolutions();
     } else {
         let currentOwner = game.organizations.find(o => o.escape);
@@ -395,13 +345,12 @@ function declineShipProject() {
 }
 
 // ==========================================
-// LÓGICA DE CONTROL DE JUEGO (ADMINISTRADOR)
+// CONTROLADOR DEL ADMINISTRADOR
 // ==========================================
-
 function startGame() {
     if(game.organizations.length === 0) return alert("Registra organizaciones primero.");
     game.started = true;
-    game.ended = false; // Resetear bandera de finalización
+    game.ended = false; 
     game.round = 1;
     game.stability = 10;
     game.decisions = {}; 
@@ -420,21 +369,16 @@ function startGame() {
 
 function sendDecision(type) {
     if(!game.started || game.ended) return alert("La simulación no está activa.");
-    if(currentRole === "admin" || currentRole === null) return alert("No eres una organización válida.");
-
     game.decisions[currentRole] = type;
     saveToServer();
 
     let statusEl = document.getElementById("status");
-    statusEl.innerHTML = `✅ Acción registrada de forma oculta.<br><small>Se contará la última acción pulsada.</small>`;
-    setTimeout(() => { 
-        if(currentRole !== null && !game.ended) statusEl.innerText = "Esperando resolución del Administrador..."; 
-    }, 3000);
+    statusEl.innerHTML = `✅ Acción registrada.<br><small>Se procesará al terminar la ronda.</small>`;
 }
 
 function nextRound() {
     if (!game.started || game.ended) return;
-    if (Object.keys(game.decisions).length === 0) return alert("Ninguna organización ha enviado coordenadas de acción.");
+    if (Object.keys(game.decisions).length === 0) return alert("Ninguna organización ha enviado acciones.");
 
     let cooperators = 0, betrayers = 0, repairers = 0;
     game.roundDecisions = {}; 
@@ -449,8 +393,9 @@ function nextRound() {
     game.organizations.forEach((org, id) => {
         let decision = game.decisions[id];
         let share = (cooperators * 15) / game.organizations.length;
-        org.wealth += share;
-
+        
+        if (org.wealth === undefined || isNaN(org.wealth)) org.wealth = 0;
+        org.wealth += Number(share) || 0;
         if (org.reputation === undefined) org.reputation = 0;
 
         if (decision === "cooperate") {
@@ -468,13 +413,11 @@ function nextRound() {
     });
 
     game.stability = Math.min(10, game.stability - (betrayers * 2) + (repairers * 1));
-    game.lastGlobalNotice = "⏳ Resolviendo fase de ingeniería espacial..."; 
+    game.lastGlobalNotice = "⏳ Analizando candidatos de ingeniería espacial..."; 
 
     let candidatesIds = [];
     game.organizations.forEach((org, id) => {
-        if (org.scrap >= 50 && !org.escape) {
-            candidatesIds.push(id);
-        }
+        if (org.scrap >= 50 && !org.escape) candidatesIds.push(id);
     });
 
     for (let i = candidatesIds.length - 1; i > 0; i--) {
@@ -493,55 +436,38 @@ function nextRound() {
         };
         saveToServer();
     } else {
-        let shipNotice = "Ningún equipo en la Tierra cuenta con la chatarra requerida (50) para activar el astillero orbital.";
+        let shipNotice = "Ningún equipo cuenta con la chatarra requerida (50) para activar el astillero.";
         game.lastGlobalNotice = buildFinalRoundNotice(shipNotice);
         checkPostShipTurnResolutions();
     }
 }
 
 function checkPostShipTurnResolutions() {
-    // CONDICIÓN: COLAPSO PLANETARIO
     if (game.stability <= 0) {
         let finalWinner = game.organizations.find(org => org.escape);
-        let extraMsg = "";
-        if (finalWinner) {
-            extraMsg = `<br><br>💥 <strong>COLAPSO CRÍTICO:</strong> ¡El planeta ha explotado! La corporación ganadora instalada en la nave es: <strong>${finalWinner.name}</strong>.`;
-        } else {
-            extraMsg = `<br><br>💥 <strong>COLAPSO CRÍTICO:</strong> El planeta fue destruido y la nave quedó desierta. Extinción total de las compañías.`;
-        }
+        let extraMsg = finalWinner ? 
+            `<br><br>💥 <strong>COLAPSO CRÍTICO:</strong> ¡El planeta explotó! Ganador en órbita: <strong>${finalWinner.name}</strong>.` :
+            `<br><br>💥 <strong>COLAPSO CRÍTICO:</strong> El planeta colapsó sin naves activas. Extinción total.`;
         game.lastGlobalNotice += extraMsg;
-        
-        // Mantener congelada la pantalla con los datos fijados
         game.started = false;
         game.ended = true; 
         saveToServer();
         return;
     }
 
-    // CONDICIÓN: FIN DE LA QUINTA RONDA
     if (game.round >= 5) {
         let winner;
         let extraMsg = "";
         if (game.stability >= 7) {
-            let ranking = game.organizations.slice().sort((a, b) => {
-                if (b.wealth !== a.wealth) return b.wealth - a.wealth;
-                if (b.reputation !== a.reputation) return b.reputation - a.reputation;
-                return b.scrap - a.scrap;
-            });
+            let ranking = game.organizations.slice().sort((a, b) => b.wealth - a.wealth);
             winner = ranking[0];
-            extraMsg = `<br><br>🏆 <strong>FIN DE LA SIMULACIÓN:</strong> El planeta resiste con un ecosistema alto. Victoria Financiera para: <strong>${winner.name}</strong> con $${winner.wealth.toFixed(1)}.`;
+            extraMsg = `<br><br>🏆 <strong>FIN:</strong> El planeta resiste. Victoria Financiera para: <strong>${winner.name}</strong> ($${(Number(winner.wealth) || 0).toFixed(1)}).`;
         } else {
-            let ranking = game.organizations.slice().sort((a, b) => {
-                if (b.reputation !== a.reputation) return b.reputation - a.reputation;
-                if (b.wealth !== a.wealth) return b.wealth - a.wealth;
-                return b.scrap - a.scrap;
-            });
+            let ranking = game.organizations.slice().sort((a, b) => b.reputation - a.reputation);
             winner = ranking[0];
-            extraMsg = `<br><br>🏆 <strong>FIN DE LA SIMULACIÓN:</strong> El planeta sobrevive gravemente dañado. Victoria Moral por Reputación para: <strong>${winner.name}</strong> (Rep: ${winner.reputation}).`;
+            extraMsg = `<br><br>🏆 <strong>FIN:</strong> Superficie severamente dañada. Victoria Moral para: <strong>${winner.name}</strong> (Reputación: ${winner.reputation}).`;
         }
         game.lastGlobalNotice += extraMsg;
-        
-        // Mantener congelada la pantalla con los datos fijados
         game.started = false;
         game.ended = true; 
         saveToServer();
@@ -553,39 +479,32 @@ function checkPostShipTurnResolutions() {
     saveToServer(); 
 }
 
-function manualReset(silent = false) {
-    if(silent || confirm("¿Seguro que deseas restaurar la base de datos de Firebase por completo? Esto cerrará las tablas de todos.")) {
+function manualReset() {
+    if(confirm("¿Restaurar por completo la base de datos de Firebase?")) {
         game = { 
-            round: 0, 
-            stability: 10, 
-            started: false, 
-            ended: false, // Vuelve a falso para liberar las pantallas de login
-            organizations: [], 
-            decisions: {},
+            round: 0, stability: 10, started: false, ended: false, organizations: [], decisions: {},
             shipPhase: { active: false, candidatesIds: [], currentIndex: 0, currentOffer: null, timerDeadline: null },
-            lastGlobalNotice: "🔄 Los servidores de simulación han sido reiniciados.",
-            roundDecisions: {}
+            lastGlobalNotice: "🔄 Los servidores de simulación han sido reiniciados.", roundDecisions: {}
         };
-        
-        db.ref("colapso2099").set(game).then(() => {
-            logout(); // Si eres el administrador, te saca a ti también de forma limpia
-        });
+        db.ref("colapso2099").set(game).then(() => logout());
     }
 }
 
-// =========================================================================
-// RESTAURACIÓN DE INTERFAZ AUTOMÁTICA EN F5 / CARGA DE PÁGINA
-// =========================================================================
+// ==========================================
+// RESTAURACIÓN DE INTERFAZ AUTOMÁTICA
+// ==========================================
 window.addEventListener("DOMContentLoaded", () => {
     if (currentRole !== null) {
         document.getElementById("authScreen").style.display = "none";
-        document.getElementById("gameScreen").style.display = "grid";
+        document.getElementById("gameScreen").style.display = "flex"; // Forzado Flex adaptive
 
         if (currentRole === "admin") {
-            document.getElementById("adminControls").style.display = "block";
+            document.getElementById("adminPanel").style.display = "block";
+            document.getElementById("adminControls").style.display = "flex";
             document.getElementById("orgPanel").style.display = "none"; 
             document.getElementById("btnExitMenu").style.display = "block"; 
         } else {
+            document.getElementById("adminPanel").style.display = "none";
             document.getElementById("adminControls").style.display = "none"; 
             document.getElementById("orgPanel").style.display = "block";
             document.getElementById("currentOrgLabel").innerText = currentOrgName;
