@@ -20,28 +20,27 @@ let game = {
     round: 0,
     stability: 10,
     started: false,
+    ended: false, // <- NUEVO: Controla si el juego ha terminado pero sigue en exposición
     organizations: [], 
     decisions: {},
     shipPhase: {
         active: false,
         candidatesIds: [],
         currentIndex: 0,
-        currentOffer: null, // "build" o "steal"
-        timerDeadline: null // Timestamp de expiración sincronizado en el servidor
+        currentOffer: null, 
+        timerDeadline: null 
     },
     lastGlobalNotice: "", 
     roundDecisions: {} 
 };
 
-// -------------------------------------------------------------------------
-// [SOPORTE PERSISTENCIA]: Intentar recuperar la sesión activa del navegador
-// -------------------------------------------------------------------------
+// PERSISTENCIA: Intentar recuperar la sesión activa del navegador
 let currentRole = localStorage.getItem("colapso_role") !== null ? 
     (localStorage.getItem("colapso_role") === "admin" ? "admin" : parseInt(localStorage.getItem("colapso_role"), 10)) 
     : null;   
 
 let currentOrgName = localStorage.getItem("colapso_orgName") || "";   
-let localTimerInterval = null; // Manejador del loop visual del cronómetro
+let localTimerInterval = null; 
 
 // ==========================================
 // SINCRONIZACIÓN ASÍNCRONA EN TIEMPO REAL
@@ -54,12 +53,13 @@ db.ref("colapso2099").on("value", (snapshot) => {
         if (!game.decisions) game.decisions = {};
         if (!game.shipPhase) game.shipPhase = { active: false, candidatesIds: [], currentIndex: 0, currentOffer: null, timerDeadline: null };
         if (!game.roundDecisions) game.roundDecisions = {};
+        if (game.ended === undefined) game.ended = false;
     } else {
-        game = { round: 0, stability: 10, started: false, organizations: [], decisions: {}, shipPhase: { active: false, candidatesIds: [], currentIndex: 0, currentOffer: null, timerDeadline: null }, lastGlobalNotice: "", roundDecisions: {} };
+        game = { round: 0, stability: 10, started: false, ended: false, organizations: [], decisions: {}, shipPhase: { active: false, candidatesIds: [], currentIndex: 0, currentOffer: null, timerDeadline: null }, lastGlobalNotice: "", roundDecisions: {} };
     }
     
-    // Si el juego ha vuelto a 0 (por resolución final) y eres un jugador, expulsión automática inmediata
-    if (game.round === 0 && currentRole !== null && currentRole !== "admin") {
+    // CORRECCIÓN: Si el admin reinició todo (ended vuelve a false y round es 0), se expulsa a los jugadores al menú
+    if (game.round === 0 && !game.ended && currentRole !== null && currentRole !== "admin") {
         logout();
         return;
     }
@@ -84,7 +84,6 @@ function accessAsAdmin() {
         currentRole = "admin";
         currentOrgName = "";
 
-        // [PERSISTENCIA]: Guardar sesión de administrador en el navegador
         localStorage.setItem("colapso_role", "admin");
         localStorage.setItem("colapso_orgName", "");
 
@@ -92,8 +91,6 @@ function accessAsAdmin() {
         document.getElementById("gameScreen").style.display = "grid";
         document.getElementById("adminControls").style.display = "block";
         document.getElementById("orgPanel").style.display = "none"; 
-        
-        // El administrador conserva su botón visible para desloguearse si lo requiere
         document.getElementById("btnExitMenu").style.display = "block"; 
         
         render(); 
@@ -110,6 +107,9 @@ function accessAsOrg() {
     let idx = game.organizations.findIndex(org => org.name.toLowerCase() === name.toLowerCase());
 
     if (idx === -1) {
+        // Si el juego ya empezó o terminó, impedir registros nuevos improvisados
+        if(game.started || game.ended) return alert("❌ No puedes unirte, la simulación ya está en curso o ha finalizado.");
+
         game.organizations.push({
             name: name,
             wealth: 0,
@@ -126,7 +126,6 @@ function accessAsOrg() {
     currentRole = idx;
     currentOrgName = game.organizations[idx].name;
 
-    // [PERSISTENCIA]: Guardar índice y nombre de la corporación del jugador
     localStorage.setItem("colapso_role", idx);
     localStorage.setItem("colapso_orgName", currentOrgName);
 
@@ -135,8 +134,6 @@ function accessAsOrg() {
     document.getElementById("adminControls").style.display = "none"; 
     document.getElementById("orgPanel").style.display = "block";
     document.getElementById("currentOrgLabel").innerText = currentOrgName;
-    
-    // Ocultar por completo e impedir el regreso manual al menú a las organizaciones
     document.getElementById("btnExitMenu").style.display = "none"; 
     
     render();
@@ -147,7 +144,6 @@ function logout() {
     currentOrgName = "";
     clearInterval(localTimerInterval); 
     
-    // [PERSISTENCIA]: Limpiar los registros para permitir un nuevo login limpio
     localStorage.removeItem("colapso_role");
     localStorage.removeItem("colapso_orgName");
     
@@ -179,6 +175,7 @@ function render() {
         alertBox.style.display = "none";
     }
 
+    // Clasificación final o parcial (Se ordena por riqueza de forma base)
     let ranking = game.organizations.slice().sort((a, b) => b.wealth - a.wealth);
 
     let html = `<table><tr>
@@ -204,7 +201,7 @@ function render() {
             if (rawDecision === "repair") decisionTraducida = "🔧 Reparar";
         }
 
-        html += `<tr>
+        html += `<tr ${org.escape ? 'style="background: rgba(170, 0, 255, 0.15);"' : ''}>
             <td>${org.name}</td>
             <td>$${org.wealth.toFixed(1)}</td>
             <td>${org.reputation || 0}</td>
@@ -219,6 +216,11 @@ function render() {
     });
     html += "</table>";
     document.getElementById("ranking").innerHTML = html;
+
+    // Si el juego terminó, ocultamos los botones de acción a las organizaciones para que solo contemplen la tabla
+    if(game.ended && currentRole !== "admin" && currentRole !== null) {
+        document.getElementById("status").innerHTML = `<strong style="color: #00ffff; font-size: 1.1rem;">📊 Simulación Finalizada. Esperando que el Administrador reinicie los servidores...</strong>`;
+    }
 }
 
 function toggleHelp() {
@@ -400,6 +402,7 @@ function declineShipProject() {
 function startGame() {
     if(game.organizations.length === 0) return alert("Registra organizaciones primero.");
     game.started = true;
+    game.ended = false; // Resetear bandera de finalización
     game.round = 1;
     game.stability = 10;
     game.decisions = {}; 
@@ -417,7 +420,7 @@ function startGame() {
 }
 
 function sendDecision(type) {
-    if(!game.started) return alert("El Administrador debe iniciar la simulación.");
+    if(!game.started || game.ended) return alert("La simulación no está activa.");
     if(currentRole === "admin" || currentRole === null) return alert("No eres una organización válida.");
 
     game.decisions[currentRole] = type;
@@ -426,12 +429,12 @@ function sendDecision(type) {
     let statusEl = document.getElementById("status");
     statusEl.innerHTML = `✅ Acción registrada de forma oculta.<br><small>Se contará la última acción pulsada.</small>`;
     setTimeout(() => { 
-        if(currentRole !== null) statusEl.innerText = "Esperando resolución del Administrador..."; 
+        if(currentRole !== null && !game.ended) statusEl.innerText = "Esperando resolución del Administrador..."; 
     }, 3000);
 }
 
 function nextRound() {
-    if (!game.started) return;
+    if (!game.started || game.ended) return;
     if (Object.keys(game.decisions).length === 0) return alert("Ninguna organización ha enviado coordenadas de acción.");
 
     let cooperators = 0, betrayers = 0, repairers = 0;
@@ -498,6 +501,7 @@ function nextRound() {
 }
 
 function checkPostShipTurnResolutions() {
+    // CONDICIÓN: COLAPSO PLANETARIO
     if (game.stability <= 0) {
         let finalWinner = game.organizations.find(org => org.escape);
         let extraMsg = "";
@@ -508,12 +512,14 @@ function checkPostShipTurnResolutions() {
         }
         game.lastGlobalNotice += extraMsg;
         
-        game.round = 0;
+        // Mantener congelada la pantalla con los datos fijados
         game.started = false;
+        game.ended = true; 
         saveToServer();
         return;
     }
 
+    // CONDICIÓN: FIN DE LA QUINTA RONDA
     if (game.round >= 5) {
         let winner;
         let extraMsg = "";
@@ -536,8 +542,9 @@ function checkPostShipTurnResolutions() {
         }
         game.lastGlobalNotice += extraMsg;
         
-        game.round = 0;
+        // Mantener congelada la pantalla con los datos fijados
         game.started = false;
+        game.ended = true; 
         saveToServer();
         return;
     }
@@ -548,11 +555,12 @@ function checkPostShipTurnResolutions() {
 }
 
 function manualReset(silent = false) {
-    if(silent || confirm("¿Seguro que deseas restaurar la base de datos de Firebase por completo?")) {
+    if(silent || confirm("¿Seguro que deseas restaurar la base de datos de Firebase por completo? Esto cerrará las tablas de todos.")) {
         game = { 
             round: 0, 
             stability: 10, 
             started: false, 
+            ended: false, // Vuelve a falso para liberar las pantallas de login
             organizations: [], 
             decisions: {},
             shipPhase: { active: false, candidatesIds: [], currentIndex: 0, currentOffer: null, timerDeadline: null },
@@ -561,17 +569,16 @@ function manualReset(silent = false) {
         };
         
         db.ref("colapso2099").set(game).then(() => {
-            logout();
+            logout(); // Si eres el administrador, te saca a ti también de forma limpia
         });
     }
 }
 
 // =========================================================================
-// [PERSISTENCIA]: RESTAURACIÓN DE INTERFAZ AUTOMÁTICA EN F5 / CARGA DE PÁGINA
+// RESTAURACIÓN DE INTERFAZ AUTOMÁTICA EN F5 / CARGA DE PÁGINA
 // =========================================================================
 window.addEventListener("DOMContentLoaded", () => {
     if (currentRole !== null) {
-        // Romper la pantalla de autenticación de inmediato si hay credenciales locales guardadas
         document.getElementById("authScreen").style.display = "none";
         document.getElementById("gameScreen").style.display = "grid";
 
