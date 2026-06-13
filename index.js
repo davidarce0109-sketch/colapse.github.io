@@ -33,7 +33,9 @@ let game = {
     roundDecisions: {} 
 };
 
-// PERSISTENCIA: Intentar recuperar sesión del almacenamiento local antes de inicializar en null
+// -------------------------------------------------------------------------
+// [SOPORTE PERSISTENCIA]: Intentar recuperar la sesión activa del navegador
+// -------------------------------------------------------------------------
 let currentRole = localStorage.getItem("colapso_role") !== null ? 
     (localStorage.getItem("colapso_role") === "admin" ? "admin" : parseInt(localStorage.getItem("colapso_role"), 10)) 
     : null;   
@@ -82,7 +84,7 @@ function accessAsAdmin() {
         currentRole = "admin";
         currentOrgName = "";
 
-        // Guardar estado de sesión en el navegador
+        // [PERSISTENCIA]: Guardar sesión de administrador en el navegador
         localStorage.setItem("colapso_role", "admin");
         localStorage.setItem("colapso_orgName", "");
 
@@ -124,7 +126,7 @@ function accessAsOrg() {
     currentRole = idx;
     currentOrgName = game.organizations[idx].name;
 
-    // Guardar estado de sesión en el navegador
+    // [PERSISTENCIA]: Guardar índice y nombre de la corporación del jugador
     localStorage.setItem("colapso_role", idx);
     localStorage.setItem("colapso_orgName", currentOrgName);
 
@@ -145,7 +147,7 @@ function logout() {
     currentOrgName = "";
     clearInterval(localTimerInterval); 
     
-    // Limpiar rastro de almacenamiento para permitir un nuevo login limpio
+    // [PERSISTENCIA]: Limpiar los registros para permitir un nuevo login limpio
     localStorage.removeItem("colapso_role");
     localStorage.removeItem("colapso_orgName");
     
@@ -302,12 +304,10 @@ function evaluateShipPrompts() {
 
     let activeCandidateId = game.shipPhase.candidatesIds[game.shipPhase.currentIndex];
     
-    // CORRECCIÓN DEFINITIVA: Forzar parsing numérico estricto para evitar el bug de "NaNs"
     let deadline = parseInt(game.shipPhase.timerDeadline, 10);
     let now = Date.now();
     let timeLeft = Math.ceil((deadline - now) / 1000);
 
-    // Si expiró el tiempo o el cálculo no es válido, procesamos el descarte automáticamente
     if (isNaN(timeLeft) || timeLeft <= 0) {
         if (currentRole === activeCandidateId || currentRole === "admin") {
             declineShipProject();
@@ -332,7 +332,6 @@ function evaluateShipPrompts() {
             btn.style.background = "#00ff99";
         }
 
-        // Loop local para el renderizado visual continuo del cronómetro en la UI
         localTimerInterval = setInterval(() => {
             let rem = Math.ceil((parseInt(game.shipPhase.timerDeadline, 10) - Date.now()) / 1000);
             if (isNaN(rem) || rem <= 0) {
@@ -379,7 +378,6 @@ function declineShipProject() {
     clearInterval(localTimerInterval);
     game.shipPhase.currentIndex++;
     
-    // Si ya recorrimos a todos los candidatos válidos de la Tierra
     if (game.shipPhase.currentIndex >= game.shipPhase.candidatesIds.length) {
         game.shipPhase.active = false;
         
@@ -388,11 +386,8 @@ function declineShipProject() {
         
         checkPostShipTurnResolutions();
     } else {
-        // Al pasar al siguiente rival, el tipo de oferta se evalúa dinámicamente
         let currentOwner = game.organizations.find(o => o.escape);
         game.shipPhase.currentOffer = currentOwner ? "steal" : "build";
-        
-        // Asignamos 10 segundos limpios para el nuevo candidato
         game.shipPhase.timerDeadline = Date.now() + 10000; 
         saveToServer(); 
     }
@@ -473,7 +468,6 @@ function nextRound() {
     game.stability = Math.min(10, game.stability - (betrayers * 2) + (repairers * 1));
     game.lastGlobalNotice = "⏳ Resolviendo fase de ingeniería espacial..."; 
 
-    // CORRECCIÓN TOTAL DE RAÍZ: Se incluye a la lista SOLO si tiene chatarra Y NO es el dueño actual
     let candidatesIds = [];
     game.organizations.forEach((org, id) => {
         if (org.scrap >= 50 && !org.escape) {
@@ -481,7 +475,6 @@ function nextRound() {
         }
     });
 
-    // Barajamos aleatoriamente a los rivales que están abajo en la Tierra
     for (let i = candidatesIds.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [candidatesIds[i], candidatesIds[j]] = [candidatesIds[j], candidatesIds[i]];
@@ -515,7 +508,6 @@ function checkPostShipTurnResolutions() {
         }
         game.lastGlobalNotice += extraMsg;
         
-        // Forzar ronda a 0 en la DB para accionar de inmediato el vaciado de los clientes jugadores
         game.round = 0;
         game.started = false;
         saveToServer();
@@ -544,7 +536,6 @@ function checkPostShipTurnResolutions() {
         }
         game.lastGlobalNotice += extraMsg;
         
-        // Cierre definitivo de sesión para todos al mutar a la ronda cero
         game.round = 0;
         game.started = false;
         saveToServer();
@@ -575,12 +566,12 @@ function manualReset(silent = false) {
     }
 }
 
-// ==========================================
-// DETECTOR AUTOMÁTICO DE SESIÓN AL CARGAR F5
-// ==========================================
+// =========================================================================
+// [PERSISTENCIA]: RESTAURACIÓN DE INTERFAZ AUTOMÁTICA EN F5 / CARGA DE PÁGINA
+// =========================================================================
 window.addEventListener("DOMContentLoaded", () => {
     if (currentRole !== null) {
-        // Si existe sesión previa activa, saltarse la pantalla de Login directamente
+        // Romper la pantalla de autenticación de inmediato si hay credenciales locales guardadas
         document.getElementById("authScreen").style.display = "none";
         document.getElementById("gameScreen").style.display = "grid";
 
