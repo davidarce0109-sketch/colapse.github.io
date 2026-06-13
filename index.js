@@ -88,8 +88,7 @@ function accessAsAdmin() {
         localStorage.setItem("colapso_orgName", "");
 
         document.getElementById("authScreen").style.display = "none";
-        document.getElementById("gameScreen").style.display = "grid";
-        document.getElementById("adminControls").style.display = "block";
+        document.getElementById("gameScreen").style.display = "flex";        document.getElementById("adminControls").style.display = "block";
         document.getElementById("orgPanel").style.display = "none"; 
         document.getElementById("btnExitMenu").style.display = "block"; 
         
@@ -130,7 +129,7 @@ function accessAsOrg() {
     localStorage.setItem("colapso_orgName", currentOrgName);
 
     document.getElementById("authScreen").style.display = "none";
-    document.getElementById("gameScreen").style.display = "grid";
+    document.getElementById("gameScreen").style.display = "flex";
     document.getElementById("adminControls").style.display = "none"; 
     document.getElementById("orgPanel").style.display = "block";
     document.getElementById("currentOrgLabel").innerText = currentOrgName;
