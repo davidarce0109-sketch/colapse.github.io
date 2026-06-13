@@ -34,7 +34,7 @@ let currentOrgName = localStorage.getItem("colapso_orgName") || "";
 let localTimerInterval = null; 
 
 // ==========================================
-// SINCRONIZACIÓN ASÍNCRONA EN TIEMPO REAL (CORREGIDA)
+// SINCRONIZACIÓN ASÍNCRONA EN TIEMPO REAL
 // ==========================================
 db.ref("colapso2099").on("value", (snapshot) => {
     const data = snapshot.val();
@@ -49,7 +49,7 @@ db.ref("colapso2099").on("value", (snapshot) => {
         game = { round: 0, stability: 10, started: false, ended: false, organizations: [], decisions: {}, shipPhase: { active: false, candidatesIds: [], currentIndex: 0, currentOffer: null, timerDeadline: null }, lastGlobalNotice: "", roundDecisions: {} };
     }
     
-    // Se eliminó la validación defectuosa que expulsaba a los usuarios al lobby.
+    // Se mantiene libre de expulsiones automáticas para evitar salidas forzadas al lobby.
 
     if (currentRole !== null) {
         render();
@@ -232,7 +232,7 @@ function buildFinalRoundNotice(shipResolutionText) {
         let decision = game.roundDecisions ? game.roundDecisions[id] : null;
         let actionText = "💤 No reportó acción";
         if (decision === "cooperate") actionText = "🟢 Cooperó con el planeta";
-        else if (decision === "betray") actionText = "🔴 Traicóno para extraer recursos";
+        else if (decision === "betray") actionText = "🔴 Traicionó para extraer recursos";
         else if (decision === "repair") actionText = "🔧 Reparó la infraestructura global";
         lines.push(`• <strong>${org.name}</strong>: ${actionText}.`);
     });
@@ -435,11 +435,15 @@ function nextRound() {
     } else {
         let shipNotice = "Ningún equipo cuenta con la chatarra requerida (50) para activar el astillero.";
         game.lastGlobalNotice = buildFinalRoundNotice(shipNotice);
-        checkPostShipTurnResolutions();
+        executeRoundTransition();
     }
 }
 
 function checkPostShipTurnResolutions() {
+    executeRoundTransition();
+}
+
+function executeRoundTransition() {
     if (game.stability <= 0) {
         let finalWinner = game.organizations.find(org => org.escape);
         let extraMsg = finalWinner ? 
@@ -448,6 +452,7 @@ function checkPostShipTurnResolutions() {
         game.lastGlobalNotice += extraMsg;
         game.started = false;
         game.ended = true; 
+        game.decisions = {}; 
         saveToServer();
         return;
     }
@@ -458,15 +463,16 @@ function checkPostShipTurnResolutions() {
         if (game.stability >= 7) {
             let ranking = game.organizations.slice().sort((a, b) => b.wealth - a.wealth);
             winner = ranking[0];
-            extraMsg = `<br><br>🏆 <strong>FIN:</strong> El planeta resiste. Victoria Financiera para: <strong>${winner.name}</strong> ($${(Number(winner.wealth) || 0).toFixed(1)}).`;
+            extraMsg = `<br><br>🏆 <strong>FIN DE LA SIMULACIÓN:</strong> El planeta resiste. Victoria Financiera para: <strong>${winner.name}</strong> ($${(Number(winner.wealth) || 0).toFixed(1)}).`;
         } else {
             let ranking = game.organizations.slice().sort((a, b) => b.reputation - a.reputation);
             winner = ranking[0];
-            extraMsg = `<br><br>🏆 <strong>FIN:</strong> Superficie severamente dañada. Victoria Moral para: <strong>${winner.name}</strong> (Reputación: ${winner.reputation}).`;
+            extraMsg = `<br><br>🏆 <strong>FIN DE LA SIMULACIÓN:</strong> Superficie severamente dañada. Victoria Moral para: <strong>${winner.name}</strong> (Reputación: ${winner.reputation}).`;
         }
         game.lastGlobalNotice += extraMsg;
         game.started = false;
         game.ended = true; 
+        game.decisions = {}; 
         saveToServer();
         return;
     }
