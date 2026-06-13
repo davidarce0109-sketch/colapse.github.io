@@ -36,21 +36,22 @@
         </div>
     </div>
     
-    <div class="panel" id="adminPanel">
-        <h2>Panel de Control</h2>
-        <div style="margin-top:20px; display: flex; justify-content: space-between; align-items: center;">
+    <div class="panel" id="statusPanel" style="grid-column: span 2; background: #111; border: 1px solid #333; margin-bottom: 15px;">
+        <div style="display: flex; justify-content: space-around; align-items: center; padding: 10px 0; border-bottom: 1px solid #222;">
             <h3>Ronda: <span id="round" style="color:#00ecff;">0</span> / 5</h3>
-            <h3>Estabilidad: <span id="stability">10</span>/10</h3>
+            <h3>Estabilidad Ecosistema: <span id="stability">10</span>/10</h3>
         </div>
+        
+        <div id="ranking" style="margin-top: 15px; padding: 10px;"></div>
+    </div>
 
-        <div id="ranking"></div>
-
+    <div class="panel" id="adminPanel" style="display: none;">
+        <h2>Controles de Misión</h2>
         <div id="adminControls" style="display: none;">
             <button class="btn-process" onclick="nextRound()" style="width:100%; font-weight:bold; height:50px; font-size:1.1rem;">Procesar Ronda Actual</button>
             <button onclick="startGame()" style="width:100%; background:#333; color:#aaa; margin-top:10px; padding:10px;">Iniciar Partida</button>
             <button class="btn-danger" onclick="manualReset()" style="width:100%; margin-top:10px; padding:10px;">Reiniciar Todo (Borrar de Firebase)</button>
         </div>
-        
         <button id="btnExitMenu" onclick="logout()" style="width:100%; background:#444; color:white; margin-top:15px; padding:10px; border:none; cursor:pointer;">⬅️ Salir al Menú</button>
     </div>
 
