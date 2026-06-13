@@ -1,9 +1,5 @@
 body { 
-    background-image: url('fondo.jpg');
-    background-size: cover; 
-    background-position: center; 
-    background-repeat: no-repeat; 
-    height: 100vh; 
+    background-color: cyan; 
     font-family: 'Segoe UI', Arial, sans-serif; 
     color: #eee; 
     margin: 0; 
