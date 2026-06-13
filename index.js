@@ -33,8 +33,12 @@ let game = {
     roundDecisions: {} 
 };
 
-let currentRole = null;    
-let currentOrgName = "";   
+// PERSISTENCIA: Intentar recuperar sesión del almacenamiento local antes de inicializar en null
+let currentRole = localStorage.getItem("colapso_role") !== null ? 
+    (localStorage.getItem("colapso_role") === "admin" ? "admin" : parseInt(localStorage.getItem("colapso_role"), 10)) 
+    : null;   
+
+let currentOrgName = localStorage.getItem("colapso_orgName") || "";   
 let localTimerInterval = null; // Manejador del loop visual del cronómetro
 
 // ==========================================
@@ -78,6 +82,10 @@ function accessAsAdmin() {
         currentRole = "admin";
         currentOrgName = "";
 
+        // Guardar estado de sesión en el navegador
+        localStorage.setItem("colapso_role", "admin");
+        localStorage.setItem("colapso_orgName", "");
+
         document.getElementById("authScreen").style.display = "none";
         document.getElementById("gameScreen").style.display = "grid";
         document.getElementById("adminControls").style.display = "block";
@@ -116,6 +124,10 @@ function accessAsOrg() {
     currentRole = idx;
     currentOrgName = game.organizations[idx].name;
 
+    // Guardar estado de sesión en el navegador
+    localStorage.setItem("colapso_role", idx);
+    localStorage.setItem("colapso_orgName", currentOrgName);
+
     document.getElementById("authScreen").style.display = "none";
     document.getElementById("gameScreen").style.display = "grid";
     document.getElementById("adminControls").style.display = "none"; 
@@ -132,6 +144,10 @@ function logout() {
     currentRole = null;
     currentOrgName = "";
     clearInterval(localTimerInterval); 
+    
+    // Limpiar rastro de almacenamiento para permitir un nuevo login limpio
+    localStorage.removeItem("colapso_role");
+    localStorage.removeItem("colapso_orgName");
     
     document.getElementById("gameScreen").style.display = "none";
     document.getElementById("adminControls").style.display = "none";
@@ -558,3 +574,25 @@ function manualReset(silent = false) {
         });
     }
 }
+
+// ==========================================
+// DETECTOR AUTOMÁTICO DE SESIÓN AL CARGAR F5
+// ==========================================
+window.addEventListener("DOMContentLoaded", () => {
+    if (currentRole !== null) {
+        // Si existe sesión previa activa, saltarse la pantalla de Login directamente
+        document.getElementById("authScreen").style.display = "none";
+        document.getElementById("gameScreen").style.display = "grid";
+
+        if (currentRole === "admin") {
+            document.getElementById("adminControls").style.display = "block";
+            document.getElementById("orgPanel").style.display = "none"; 
+            document.getElementById("btnExitMenu").style.display = "block"; 
+        } else {
+            document.getElementById("adminControls").style.display = "none"; 
+            document.getElementById("orgPanel").style.display = "block";
+            document.getElementById("currentOrgLabel").innerText = currentOrgName;
+            document.getElementById("btnExitMenu").style.display = "none"; 
+        }
+    }
+});
