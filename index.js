@@ -34,7 +34,7 @@ let currentOrgName = localStorage.getItem("colapso_orgName") || "";
 let localTimerInterval = null; 
 
 // ==========================================
-// SINCRONIZACIÓN ASÍNCRONA EN TIEMPO REAL
+// SINCRONIZACIÓN ASÍNCRONA EN TIEMPO REAL (CORREGIDA)
 // ==========================================
 db.ref("colapso2099").on("value", (snapshot) => {
     const data = snapshot.val();
@@ -49,10 +49,7 @@ db.ref("colapso2099").on("value", (snapshot) => {
         game = { round: 0, stability: 10, started: false, ended: false, organizations: [], decisions: {}, shipPhase: { active: false, candidatesIds: [], currentIndex: 0, currentOffer: null, timerDeadline: null }, lastGlobalNotice: "", roundDecisions: {} };
     }
     
-    if (game.round === 0 && !game.ended && currentRole !== null && currentRole !== "admin") {
-        logout();
-        return;
-    }
+    // Se eliminó la validación defectuosa que expulsaba a los usuarios al lobby.
 
     if (currentRole !== null) {
         render();
@@ -77,7 +74,7 @@ function accessAsAdmin() {
         localStorage.setItem("colapso_orgName", "");
 
         document.getElementById("authScreen").style.display = "none";
-        document.getElementById("gameScreen").style.display = "flex"; // Forzado Flex adaptive
+        document.getElementById("gameScreen").style.display = "flex"; 
         document.getElementById("adminPanel").style.display = "block";
         document.getElementById("adminControls").style.display = "flex";
         document.getElementById("orgPanel").style.display = "none"; 
@@ -119,7 +116,7 @@ function accessAsOrg() {
     localStorage.setItem("colapso_orgName", currentOrgName);
 
     document.getElementById("authScreen").style.display = "none";
-    document.getElementById("gameScreen").style.display = "flex"; // Forzado Flex adaptive
+    document.getElementById("gameScreen").style.display = "flex"; 
     document.getElementById("adminPanel").style.display = "none";
     document.getElementById("adminControls").style.display = "none"; 
     document.getElementById("orgPanel").style.display = "block";
@@ -235,7 +232,7 @@ function buildFinalRoundNotice(shipResolutionText) {
         let decision = game.roundDecisions ? game.roundDecisions[id] : null;
         let actionText = "💤 No reportó acción";
         if (decision === "cooperate") actionText = "🟢 Cooperó con el planeta";
-        else if (decision === "betray") actionText = "🔴 Traicionó para extraer recursos";
+        else if (decision === "betray") actionText = "🔴 Traicóno para extraer recursos";
         else if (decision === "repair") actionText = "🔧 Reparó la infraestructura global";
         lines.push(`• <strong>${org.name}</strong>: ${actionText}.`);
     });
@@ -496,7 +493,7 @@ function manualReset() {
 window.addEventListener("DOMContentLoaded", () => {
     if (currentRole !== null) {
         document.getElementById("authScreen").style.display = "none";
-        document.getElementById("gameScreen").style.display = "flex"; // Forzado Flex adaptive
+        document.getElementById("gameScreen").style.display = "flex"; 
 
         if (currentRole === "admin") {
             document.getElementById("adminPanel").style.display = "block";
