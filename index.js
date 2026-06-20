@@ -49,7 +49,14 @@ db.ref("colapso2099").on("value", (snapshot) => {
         game = { round: 0, stability: 10, started: false, ended: false, organizations: [], decisions: {}, shipPhase: { active: false, candidatesIds: [], currentIndex: 0, currentOffer: null, timerDeadline: null }, lastGlobalNotice: "", roundDecisions: {} };
     }
     
-    // Se mantiene libre de expulsiones automáticas para evitar salidas forzadas al lobby.
+    // CORRECCIÓN 2: Expulsión automática en tiempo real de jugadores si el juego se reinicia
+    if (currentRole !== null && currentRole !== "admin") {
+        if (game.round === 0 || !game.organizations[currentRole]) {
+            logout();
+            alert("🔄 La simulación ha sido reiniciada por el administrador.");
+            return;
+        }
+    }
 
     if (currentRole !== null) {
         render();
@@ -94,7 +101,8 @@ function accessAsOrg() {
     let idx = game.organizations.findIndex(org => org.name.toLowerCase() === name.toLowerCase());
 
     if (idx === -1) {
-        if(game.started || game.ended) return alert("❌ No puedes unirte, la simulación ya está en curso.");
+        // CORRECCIÓN 1: Se permite unirse si game.round es 0 (fase de registro), previniendo bloqueos extraños
+        if((game.started || game.ended) && game.round > 0) return alert("❌ No puedes unirte, la simulación ya está en curso.");
 
         game.organizations.push({
             name: name,
@@ -489,6 +497,7 @@ function manualReset() {
             shipPhase: { active: false, candidatesIds: [], currentIndex: 0, currentOffer: null, timerDeadline: null },
             lastGlobalNotice: "🔄 Los servidores de simulación han sido reiniciados.", roundDecisions: {}
         };
+        // CORRECCIÓN 1: El Admin limpia los datos en la nube primero para empujar la expulsión, luego sale él mismo
         db.ref("colapso2099").set(game).then(() => logout());
     }
 }
